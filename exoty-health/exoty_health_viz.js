@@ -40,6 +40,8 @@
   .eh-chip.eh-neutral{background:#eef0f2;color:#6b7280}
   .eh-note{margin-top:16px;background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:12px;color:#4b5563;line-height:1.5}
   .eh-note b{color:var(--ink)} .eh-note .t{font-weight:680;font-size:12.5px;color:var(--ink);margin-bottom:4px}
+  .eh-m2{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #f6f7f9}
+  .eh-m2:last-child{border-bottom:none}
   .eh-empty{color:#6b7280;padding:24px;text-align:center}
   `;
  
@@ -210,6 +212,43 @@
     root.innerHTML=html;
   }
  
+  /* ---- Monthly summary : MTD spend + organic/paid installs, vs prev month (same days elapsed) ---- */
+  function renderMonthly(root, rows, R){
+    var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPaid=R("is_paid"), fInst=R("new_installs"), fCost=R("total_attribution_cost");
+    var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    var by={}, apps=[];
+    rows.forEach(function(r){ var a=cell(r,fApp), d=cell(r,fDate); if(a==null||d==null)return;
+      if(!by[a]){by[a]={};apps.push(a);}
+      if(!by[a][d])by[a][d]={spend:0,paid:0,org:0};
+      var cost=+cell(r,fCost)||0, inst=+cell(r,fInst)||0, pd=String(cell(r,fPaid)||"");
+      by[a][d].spend+=cost; if(/paid/i.test(pd)) by[a][d].paid+=inst; else by[a][d].org+=inst; });
+    // reference day = latest date with activity
+    var maxD=null; apps.forEach(function(a){ for(var d in by[a]){ var x=by[a][d]; if(x.spend>0||x.paid>0||x.org>0){ if(maxD==null||d>maxD)maxD=d; } } });
+    if(!maxD){ root.innerHTML='<div class="eh-empty">No data.</div>'; return; }
+    var N=parseInt(maxD.slice(8,10),10), curYM=maxD.slice(0,7);
+    var y=parseInt(curYM.slice(0,4),10), m=parseInt(curYM.slice(5,7),10); var pm=m-1, py=y; if(pm<1){pm=12;py--;}
+    var prevYM=py+"-"+(pm<10?"0"+pm:pm);
+    function agg(a,ym){ var s={spend:0,paid:0,org:0}; for(var d in by[a]){ if(d.slice(0,7)!==ym)continue; if(parseInt(d.slice(8,10),10)>N)continue; var x=by[a][d]; s.spend+=x.spend;s.paid+=x.paid;s.org+=x.org; } return s; }
+    function monLbl(ym){ return MON[parseInt(ym.slice(5,7),10)-1]; }
+    var sub="MTD 1–"+N+" "+monLbl(curYM)+" vs 1–"+N+" "+monLbl(prevYM)+" (mois précédent)";
+    function row2(nm,val,cur,prev,growth){ var r=relD(cur,prev); var rc=growth?(r==null?"neutral":(r>=0?"good":"bad")):"neutral";
+      return '<div class="eh-m2"><div class="eh-name">'+nm+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span></div><span class="eh-chip eh-'+rc+'">'+deltaTxt(r)+'</span></div></div>'; }
+ 
+    var html='<div class="eh-games">'+apps.map(function(app){
+      var c=agg(app,curYM), p=agg(app,prevYM);
+      return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">Month to date</span></div>'
+        +'<div class="eh-fresh">'+sub+'</div>'
+        +'<div class="eh-grp">Spend</div>'
+        +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,false)
+        +'<div class="eh-grp">Installs</div>'
+        +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),true)
+        +row2("Paid installs",intF(c.paid),c.paid,p.paid,true)
+        +row2("Organic installs",intF(c.org),c.org,p.org,true)
+        +'</section>';
+    }).join("")+'</div>';
+    root.innerHTML=html;
+  }
+ 
   looker.plugins.visualizations.add({
     id: "exoty_health_cards",
     label: "Exoty Health Cards",
@@ -232,7 +271,8 @@
       try{
         var R=resolver(queryResponse), thr=buildThr(config);
         if(!data || !data.length){ this._root.innerHTML='<div class="eh-empty">No data returned by the query.</div>'; return done(); }
-        if(R("count_crash")){ renderTech(this._root, data, R, thr); }
+        if(R("is_paid") && R("dt_event_date")){ renderMonthly(this._root, data, R); }
+        else if(R("count_crash")){ renderTech(this._root, data, R, thr); }
         else if(R("dt_event_date")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform")); }
         else { this._root.innerHTML='<div class="eh-empty">Unrecognized query. Provide a daily main_kpi query (KPI) or a daily Crashlytics query (technical).</div>'; }
       }catch(e){ this._root.innerHTML='<div class="eh-empty">Error: '+(e&&e.message?e.message:e)+'</div>'; }
