@@ -222,15 +222,14 @@
       if(!by[a][d])by[a][d]={spend:0,paid:0,org:0};
       var cost=+cell(r,fCost)||0, inst=+cell(r,fInst)||0, pd=String(cell(r,fPaid)||"");
       by[a][d].spend+=cost; if(/paid/i.test(pd)) by[a][d].paid+=inst; else by[a][d].org+=inst; });
-    // reference day = latest date with activity
-    var maxD=null; apps.forEach(function(a){ for(var d in by[a]){ var x=by[a][d]; if(x.spend>0||x.paid>0||x.org>0){ if(maxD==null||d>maxD)maxD=d; } } });
-    if(!maxD){ root.innerHTML='<div class="eh-empty">No data.</div>'; return; }
-    var N=parseInt(maxD.slice(8,10),10), curYM=maxD.slice(0,7);
+    // reference = today's calendar day: compare the same number of elapsed days month-over-month
+    if(!apps.length){ root.innerHTML='<div class="eh-empty">No data.</div>'; return; }
+    var T=todayUTC(); var N=T.getUTCDate(); var curYM=iso(T).slice(0,7);
     var y=parseInt(curYM.slice(0,4),10), m=parseInt(curYM.slice(5,7),10); var pm=m-1, py=y; if(pm<1){pm=12;py--;}
     var prevYM=py+"-"+(pm<10?"0"+pm:pm);
     function agg(a,ym){ var s={spend:0,paid:0,org:0}; for(var d in by[a]){ if(d.slice(0,7)!==ym)continue; if(parseInt(d.slice(8,10),10)>N)continue; var x=by[a][d]; s.spend+=x.spend;s.paid+=x.paid;s.org+=x.org; } return s; }
     function monLbl(ym){ return MON[parseInt(ym.slice(5,7),10)-1]; }
-    var sub="MTD 1–"+N+" "+monLbl(curYM)+" vs 1–"+N+" "+monLbl(prevYM)+" (mois précédent)";
+    var sub="Month-to-date, days 1–"+N+": "+monLbl(curYM)+" vs "+monLbl(prevYM)+" (same elapsed days)";
     function row2(nm,val,cur,prev,growth){ var r=relD(cur,prev); var rc=growth?(r==null?"neutral":(r>=0?"good":"bad")):"neutral";
       return '<div class="eh-m2"><div class="eh-name">'+nm+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span></div><span class="eh-chip eh-'+rc+'">'+deltaTxt(r)+'</span></div></div>'; }
  
@@ -241,7 +240,6 @@
         +'<div class="eh-grp">Spend</div>'
         +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,false)
         +'<div class="eh-grp">Installs</div>'
-        +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),true)
         +row2("Paid installs",intF(c.paid),c.paid,p.paid,true)
         +row2("Organic installs",intF(c.org),c.org,p.org,true)
         +'</section>';
