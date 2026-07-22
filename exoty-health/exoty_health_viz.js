@@ -44,14 +44,14 @@
   .eh-m2:last-child{border-bottom:none}
   .eh-empty{color:#6b7280;padding:24px;text-align:center}
   `;
- 
+
   var CUR = "€", SPARK_DAYS = 14;
- 
+
   function todayUTC(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())); }
   function iso(d){ return d.toISOString().slice(0,10); }
   function addDays(d,n){ var x=new Date(d); x.setUTCDate(x.getUTCDate()+n); return x; }
   function dShort(s){ var d=new Date(s+"T00:00:00Z"); return d.getUTCDate()+" "+["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][d.getUTCMonth()]; }
- 
+
   function money(v){ return v==null||isNaN(v)?"—":CUR+" "+Math.round(v).toLocaleString("en-US"); }
   function cpiF(v){ return v==null||isNaN(v)?"—":CUR+" "+v.toFixed(2); }
   function arpuF(v){ return v==null||isNaN(v)?"—":CUR+" "+v.toFixed(3); }
@@ -62,7 +62,7 @@
   function deltaTxt(r){ if(r==null)return "—"; var a=r>0?"▲":(r<0?"▼":"▬"); return a+" "+Math.abs(r*100).toFixed(r===0?0:1)+"%"; }
   function rag(r,s){ if(r==null)return "neutral"; var bad=s.hb?r>=s.bad:r<=-s.bad, warn=s.hb?r>=s.warn:r<=-s.warn; return bad?"bad":(warn?"warn":"good"); }
   function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
- 
+
   function spark(vals, ragCls, opts){
     opts=opts||{}; var w=opts.w||92, dates=opts.dates||[], fmt=opts.fmt||function(v){return v;};
     var pts=vals.filter(function(v){return v!=null && !isNaN(v);});
@@ -84,14 +84,14 @@
       +'<path d="'+line.trim()+'" fill="none" stroke="'+col+'" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round" opacity="0.85"/>'
       +'<circle cx="'+xs[last].toFixed(1)+'" cy="'+ys[last].toFixed(1)+'" r="2.6" fill="'+col+'"/>'+hits+'</svg>';
   }
- 
+
   function resolver(queryResponse){
     var names=[], f=queryResponse.fields;
     ["dimensions","measures","table_calculations"].forEach(function(k){ (f[k]||[]).forEach(function(x){ names.push(x.name); }); });
     return function(suffix){ for(var i=0;i<names.length;i++){ var p=names[i].split("."); if(p[p.length-1]===suffix) return names[i]; } return null; };
   }
   function cell(row,name){ if(!name||!row[name])return null; var v=row[name].value; return v==null?null:v; }
- 
+
   function num(v,d){ var x=parseFloat(v); return isNaN(x)?d:x; }
   function buildThr(config){ config=config||{}; return {
     spendSwing:num(config.spend_swing,25)/100,
@@ -101,7 +101,7 @@
     ret:{hb:false,warn:num(config.ret_warn,5)/100,  bad:num(config.ret_bad,10)/100},
     crashVol:{hb:true,warn:num(config.crash_warn,15)/100, bad:num(config.crash_bad,30)/100}
   }; }
- 
+
   function winEnding(T, endOff, daysBack){ var end=addDays(T,-(endOff+daysBack)); var start=addDays(end,-6); return [iso(start),iso(end)]; }
   var END={spend:1,cpi:1,arpu:1,arppu:1,d1:2,d3:4,d7:8,crAnd:1,anrAnd:1,crIos:1};
   function eachDay(rg,cb){ var d=rg[0],end=rg[1]; while(d<=end){ cb(d); d=iso(addDays(new Date(d+"T00:00:00Z"),1)); } }
@@ -111,7 +111,7 @@
     var s=[], dates=[]; for(var k=SPARK_DAYS-1;k>=0;k--){ var rg=winEnding(T,e,k); s.push(mvFn(key,name,rg)); dates.push(rg[1]); }
     return {cur:cur, prev:prev, s:s, dates:dates};
   }; }
- 
+
   function noteKPI(){ return '<div class="eh-note"><div class="t">How to read — windows &amp; maturity</div>'
     +'Each metric is the most recent <b>mature trailing 7-day window</b>, compared to the <b>previous 7 days</b> (rolling — works any day). Sparkline = last <b>14 days</b>.<br>'
     +'<b>Maturity:</b> retention counts a cohort only once matured — D1 uses installs up to 2 days ago, D3 up to 4 days, D7 up to 8 days (D3/D7 reflect slightly older cohorts than D1).<br>'
@@ -119,7 +119,7 @@
   function noteTech(){ return '<div class="eh-note"><div class="t">How to read</div>'
     +'Exact crash/ANR <b>volumes</b> over the most recent 7-day window vs the previous 7 days (Firebase Crashlytics). Sparkline = last 14 days. '
     +'A true crash-free rate needs Android Vitals + App Store Connect ingestion.</div>'; }
- 
+
   /* ---- KPI cards (by game, or by game x platform) ---- */
   function renderKPICards(root, rows, R, thr, byPlatform){
     var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPlat=R("cd_install_platform"),
@@ -140,7 +140,7 @@
     if(byPlatform){ appOrder.forEach(function(a){ ["Android","iOS"].forEach(function(pl){ if(by[a+" — "+pl])keys.push(a+" — "+pl); }); }); }
     else { appOrder.forEach(function(a){ if(by[a])keys.push(a); }); }
     if(!keys.length){ root.innerHTML='<div class="eh-empty">No data for the selected scope.</div>'; return; }
- 
+
     var T=todayUTC();
     function sum(k,rg,f){ var s=0; eachDay(rg,function(d){ var r=by[k].rows[d]; if(r){var v=cell(r,f);if(v!=null)s+=(+v||0);} }); return s; }
     function ratio(a,b){ return b>0?a/b:null; }
@@ -159,7 +159,7 @@
     function mrow(nm,sub,val,c,rc,fmt){ return '<div class="eh-m"><div><div class="eh-name">'+nm+'</div><div class="eh-win">'+sub+'</div></div>'
       +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:fmt})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
       +'<span class="eh-chip eh-'+rc+'">'+deltaTxt(relD(c.cur,c.prev))+'</span></div></div>'; }
- 
+
     var html='<div class="eh-games">'+keys.map(function(k){
       var m={}; ["spend","cpi","arpu","arppu","d1","d3","d7"].forEach(function(n){m[n]=M(k,n);});
       var inst=sum(k,winEnding(T,1,0),fInst), fr=freshness(k);
@@ -182,7 +182,7 @@
     }).join("")+'</div>'+noteKPI();
     root.innerHTML=html;
   }
- 
+
   /* ---- Technical (v1 style: stacked volumes per game, no split) ---- */
   function renderTech(root, rows, R, thr){
     var fDate=R("dt_crash_date"), fApp=R("st_app_name"), fPlat=R("cd_platform"), fType=R("st_error_type"), fCnt=R("count_crash");
@@ -211,7 +211,7 @@
     }).join("")+'</div>'+noteTech();
     root.innerHTML=html;
   }
- 
+
   /* ---- Monthly summary : MTD spend + organic/paid installs, vs prev month (same days elapsed) ---- */
   function renderMonthly(root, rows, R){
     var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPaid=R("is_paid"), fInst=R("new_installs"), fCost=R("total_attribution_cost");
@@ -232,7 +232,7 @@
     var sub="Month-to-date, days 1–"+N+": "+monLbl(curYM)+" vs "+monLbl(prevYM)+" (same elapsed days)";
     function row2(nm,val,cur,prev,growth){ var r=relD(cur,prev); var rc=growth?(r==null?"neutral":(r>=0?"good":"bad")):"neutral";
       return '<div class="eh-m2"><div class="eh-name">'+nm+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span></div><span class="eh-chip eh-'+rc+'">'+deltaTxt(r)+'</span></div></div>'; }
- 
+
     var html='<div class="eh-games">'+apps.map(function(app){
       var c=agg(app,curYM), p=agg(app,prevYM);
       return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">Month to date</span></div>'
@@ -240,13 +240,14 @@
         +'<div class="eh-grp">Spend</div>'
         +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,false)
         +'<div class="eh-grp">Installs</div>'
+        +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),true)
         +row2("Paid installs",intF(c.paid),c.paid,p.paid,true)
         +row2("Organic installs",intF(c.org),c.org,p.org,true)
         +'</section>';
     }).join("")+'</div>';
     root.innerHTML=html;
   }
- 
+
   looker.plugins.visualizations.add({
     id: "exoty_health_cards",
     label: "Exoty Health Cards",
