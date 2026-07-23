@@ -3,15 +3,17 @@
  * Per-game (or per-game x platform) health cards with sparklines and RAG dots,
  * from a daily Looker query.
  *
- * THREE MODES (auto-detected from the query fields):
- *   - KPI by game            : daily main_kpi query (dt_event_date, no platform dim)
- *   - KPI by game x platform  : daily main_kpi query WITH cd_install_platform (Android/iOS cards)
- *   - Technical (volumes)     : daily Crashlytics query (Android crashes / ANR, iOS crashes)
+ * FOUR MODES (auto-detected from the query fields):
+ *   - Monthly summary        : daily main_kpi with is_paid, NO retention (MTD spend / CPI / installs vs prev month)
+ *   - KPI by game            : daily main_kpi with retention counts (dt_event_date, no platform dim)
+ *   - KPI by game x platform : daily main_kpi with retention counts + cd_install_platform (Android/iOS)
+ *   - Technical (volumes)    : daily Crashlytics query (Android crashes / ANR, iOS crashes)
  *
  * Headline value = most recent MATURE trailing 7-day window; delta = vs the previous 7 days.
  * Sparkline = last 14 days (daily steps of the 7-day rolling metric), with hover tooltips.
+ * CPI paid = spend ÷ paid installs ; CPI blended = spend ÷ all installs.
  * RAG thresholds are editable from the tile's visualization settings (section "Thresholds").
- * Anchored on the viewer's current date. Fields matched by suffix, regardless of view prefix.
+ * Games are always ordered alphabetically (Belote before Tarot). Fields matched by suffix.
  */
 (function () {
   var CSS = `
@@ -103,7 +105,7 @@
   }; }
 
   function winEnding(T, endOff, daysBack){ var end=addDays(T,-(endOff+daysBack)); var start=addDays(end,-6); return [iso(start),iso(end)]; }
-  var END={spend:1,cpi:1,arpu:1,arppu:1,d1:2,d3:4,d7:8,crAnd:1,anrAnd:1,crIos:1};
+  var END={spend:1,cpi:1,cpiP:1,cpiB:1,arpu:1,arppu:1,d1:2,d3:4,d7:8,crAnd:1,anrAnd:1,crIos:1};
   function eachDay(rg,cb){ var d=rg[0],end=rg[1]; while(d<=end){ cb(d); d=iso(addDays(new Date(d+"T00:00:00Z"),1)); } }
   function buildMetric(T, mvFn){ return function(key,name){
     var e=END[name];
@@ -114,19 +116,20 @@
 
   function noteKPI(){ return '<div class="eh-note"><div class="t">How to read — windows &amp; maturity</div>'
     +'Each metric is the most recent <b>mature trailing 7-day window</b>, compared to the <b>previous 7 days</b> (rolling — works any day). Sparkline = last <b>14 days</b>.<br>'
-    +'<b>Maturity:</b> retention counts a cohort only once matured — D1 uses installs up to 2 days ago, D3 up to 4 days, D7 up to 8 days (D3/D7 reflect slightly older cohorts than D1).<br>'
+    +'<b>CPI paid</b> = spend ÷ paid installs (real acquisition cost). <b>CPI blended</b> = spend ÷ all installs (diluted by free organic installs).<br>'
+    +'<b>Maturity:</b> retention counts a cohort only once matured — D1 uses installs up to 2 days ago, D3 up to 4 days, D7 up to 8 days.<br>'
     +'Ad spend, CPI, ARPU, ARPPU are rebuilt from daily building blocks and match Looker\'s native measures.</div>'; }
   function noteTech(){ return '<div class="eh-note"><div class="t">How to read</div>'
     +'Exact crash/ANR <b>volumes</b> over the most recent 7-day window vs the previous 7 days (Firebase Crashlytics). Sparkline = last 14 days. '
     +'A true crash-free rate needs Android Vitals + App Store Connect ingestion.</div>'; }
 
-  /* ---- KPI cards (by game, or by game x platform) ---- */
+  /* ---- KPI cards (by game, or by game x platform) — CPI paid + blended ---- */
   function renderKPICards(root, rows, R, thr, byPlatform){
-    var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPlat=R("cd_install_platform"),
+    var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPlat=R("cd_install_platform"), fPaid=R("is_paid"),
         fInst=R("new_installs"), fCost=R("total_attribution_cost"), fRev=R("total_revenue"),
         fDau=R("count_player"), fIap=R("iap_revenue"), fPay=R("paying_player"),
         fD1=R("total_d1_cnt"), fD3=R("total_d3_cnt"), fD7=R("total_d7_cnt");
-    var by={}, appOrder=[];
+    var hasPaid=!!fPaid, by={}, appOrder=[];
     function keyOf(r){
       var a=cell(r,fApp); if(a==null)return null;
       if(byPlatform){ var p=cell(r,fPlat); if(p==null)return null; if(!/^(android|ios)$/i.test(String(p)))return null;
@@ -134,35 +137,40 @@
       return {k:a, app:a};
     }
     rows.forEach(function(r){ var d=cell(r,fDate); if(d==null)return; var ko=keyOf(r); if(!ko)return;
-      if(!by[ko.k]){by[ko.k]={rows:{},app:ko.app};} by[ko.k].rows[d]=r;
-      if(appOrder.indexOf(ko.app)<0)appOrder.push(ko.app); });
+      if(!by[ko.k]){by[ko.k]={acc:{},app:ko.app}; if(appOrder.indexOf(ko.app)<0)appOrder.push(ko.app);}
+      var A=by[ko.k].acc[d]||{cost:0,iAll:0,iPaid:0,rev:0,dau:0,iap:0,pay:0,d1:0,d3:0,d7:0};
+      var inst=+cell(r,fInst)||0, paid=hasPaid?/paid/i.test(String(cell(r,fPaid))):false;
+      A.cost+=+cell(r,fCost)||0; A.iAll+=inst; A.iPaid+=(paid?inst:0);
+      A.rev+=+cell(r,fRev)||0; A.dau+=+cell(r,fDau)||0; A.iap+=+cell(r,fIap)||0; A.pay+=+cell(r,fPay)||0;
+      A.d1+=+cell(r,fD1)||0; A.d3+=+cell(r,fD3)||0; A.d7+=+cell(r,fD7)||0;
+      by[ko.k].acc[d]=A; });
+    appOrder.sort();
     var keys=[];
     if(byPlatform){ appOrder.forEach(function(a){ ["Android","iOS"].forEach(function(pl){ if(by[a+" — "+pl])keys.push(a+" — "+pl); }); }); }
     else { appOrder.forEach(function(a){ if(by[a])keys.push(a); }); }
     if(!keys.length){ root.innerHTML='<div class="eh-empty">No data for the selected scope.</div>'; return; }
-
     var T=todayUTC();
-    function sum(k,rg,f){ var s=0; eachDay(rg,function(d){ var r=by[k].rows[d]; if(r){var v=cell(r,f);if(v!=null)s+=(+v||0);} }); return s; }
+    function sumF(k,rg,field){ var s=0; eachDay(rg,function(d){ var A=by[k].acc[d]; if(A)s+=A[field]; }); return s; }
     function ratio(a,b){ return b>0?a/b:null; }
     function mv(k,name,rg){ switch(name){
-      case "spend": return sum(k,rg,fCost);
-      case "cpi":   return ratio(sum(k,rg,fCost),sum(k,rg,fInst));
-      case "arpu":  return ratio(sum(k,rg,fRev),sum(k,rg,fDau));
-      case "arppu": return ratio(sum(k,rg,fIap),sum(k,rg,fPay));
-      case "d1":    return ratio(sum(k,rg,fD1),sum(k,rg,fInst));
-      case "d3":    return ratio(sum(k,rg,fD3),sum(k,rg,fInst));
-      case "d7":    return ratio(sum(k,rg,fD7),sum(k,rg,fInst));
+      case "spend": return sumF(k,rg,"cost");
+      case "cpiP":  return hasPaid?ratio(sumF(k,rg,"cost"),sumF(k,rg,"iPaid")):null;
+      case "cpiB":  return ratio(sumF(k,rg,"cost"),sumF(k,rg,"iAll"));
+      case "arpu":  return ratio(sumF(k,rg,"rev"),sumF(k,rg,"dau"));
+      case "arppu": return ratio(sumF(k,rg,"iap"),sumF(k,rg,"pay"));
+      case "d1":    return ratio(sumF(k,rg,"d1"),sumF(k,rg,"iAll"));
+      case "d3":    return ratio(sumF(k,rg,"d3"),sumF(k,rg,"iAll"));
+      case "d7":    return ratio(sumF(k,rg,"d7"),sumF(k,rg,"iAll"));
     } }
-    function freshness(k){ var mx=null; for(var d in by[k].rows){ var r=by[k].rows[d]; if((+cell(r,fInst)||0)>0||(+cell(r,fDau)||0)>0){ if(mx==null||d>mx)mx=d; } } return mx; }
+    function freshness(k){ var mx=null; for(var d in by[k].acc){ var A=by[k].acc[d]; if(A.iAll>0||A.dau>0){ if(mx==null||d>mx)mx=d; } } return mx; }
     var M=buildMetric(T,mv);
     function winL(name){ var r=winEnding(T,END[name],0); return dShort(r[0])+"→"+dShort(r[1]); }
     function mrow(nm,sub,val,c,rc,fmt){ return '<div class="eh-m"><div><div class="eh-name">'+nm+'</div><div class="eh-win">'+sub+'</div></div>'
       +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:fmt})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
       +'<span class="eh-chip eh-'+rc+'">'+deltaTxt(relD(c.cur,c.prev))+'</span></div></div>'; }
-
     var html='<div class="eh-games">'+keys.map(function(k){
-      var m={}; ["spend","cpi","arpu","arppu","d1","d3","d7"].forEach(function(n){m[n]=M(k,n);});
-      var inst=sum(k,winEnding(T,1,0),fInst), fr=freshness(k);
+      var m={}; ["spend","cpiP","cpiB","arpu","arppu","d1","d3","d7"].forEach(function(n){m[n]=M(k,n);});
+      var inst=sumF(k,winEnding(T,1,0),"iAll"), fr=freshness(k);
       var rl=function(n){return relD(m[n].cur,m[n].prev);};
       var spendRag=(rl("spend")!=null&&Math.abs(rl("spend"))>=thr.spendSwing)?"warn":"neutral";
       var rg2=function(n,s){return rag(rl(n),s);};
@@ -170,7 +178,8 @@
         +'<div class="eh-fresh">Data through '+(fr?dShort(fr):"—")+'</div>'
         +'<div class="eh-grp">Acquisition</div>'
         +mrow("Ad spend","7d rolling ("+winL("spend")+")",money(m.spend.cur),m.spend,spendRag,money)
-        +mrow("CPI","7d rolling",cpiF(m.cpi.cur),m.cpi,rg2("cpi",thr.cpi),cpiF)
+        +mrow("CPI paid","spend ÷ paid installs · 7d",cpiF(m.cpiP.cur),m.cpiP,rg2("cpiP",thr.cpi),cpiF)
+        +mrow("CPI blended","spend ÷ all installs · 7d",cpiF(m.cpiB.cur),m.cpiB,rg2("cpiB",thr.cpi),cpiF)
         +'<div class="eh-grp">Monetization</div>'
         +mrow("ARPU (IAP+Ad)","7d rolling",arpuF(m.arpu.cur),m.arpu,rg2("arpu",thr.arpu),arpuF)
         +mrow("ARPPU (IAP)","7d rolling",arppuF(m.arppu.cur),m.arppu,rg2("arppu",thr.arppu),arppuF)
@@ -190,6 +199,7 @@
     rows.forEach(function(r){ var a=cell(r,fApp), d=cell(r,fDate); if(a==null||d==null)return;
       if(!by[a]){by[a]={};apps.push(a);} if(!by[a][d])by[a][d]={};
       var key=cell(r,fPlat)+"|"+cell(r,fType); by[a][d][key]=(by[a][d][key]||0)+(+cell(r,fCnt)||0); });
+    apps.sort();
     var T=todayUTC();
     function sumKey(app,rg,key){ var s=0; eachDay(rg,function(d){ var day=by[app][d]; if(day&&day[key]!=null)s+=day[key]; }); return s; }
     function mv(app,name,rg){ if(name==="crAnd")return sumKey(app,rg,"ANDROID|FATAL"); if(name==="anrAnd")return sumKey(app,rg,"ANDROID|ANR"); if(name==="crIos")return sumKey(app,rg,"IOS|FATAL"); }
@@ -212,7 +222,7 @@
     root.innerHTML=html;
   }
 
-  /* ---- Monthly summary : MTD spend + organic/paid installs, vs prev month (same days elapsed) ---- */
+  /* ---- Monthly summary : MTD spend, CPI (paid/blended), installs (total/paid/organic) vs prev month ---- */
   function renderMonthly(root, rows, R){
     var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPaid=R("is_paid"), fInst=R("new_installs"), fCost=R("total_attribution_cost");
     var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -222,27 +232,32 @@
       if(!by[a][d])by[a][d]={spend:0,paid:0,org:0};
       var cost=+cell(r,fCost)||0, inst=+cell(r,fInst)||0, pd=String(cell(r,fPaid)||"");
       by[a][d].spend+=cost; if(/paid/i.test(pd)) by[a][d].paid+=inst; else by[a][d].org+=inst; });
-    // reference = today's calendar day: compare the same number of elapsed days month-over-month
     if(!apps.length){ root.innerHTML='<div class="eh-empty">No data.</div>'; return; }
+    apps.sort();
     var T=todayUTC(); var N=T.getUTCDate(); var curYM=iso(T).slice(0,7);
     var y=parseInt(curYM.slice(0,4),10), m=parseInt(curYM.slice(5,7),10); var pm=m-1, py=y; if(pm<1){pm=12;py--;}
     var prevYM=py+"-"+(pm<10?"0"+pm:pm);
     function agg(a,ym){ var s={spend:0,paid:0,org:0}; for(var d in by[a]){ if(d.slice(0,7)!==ym)continue; if(parseInt(d.slice(8,10),10)>N)continue; var x=by[a][d]; s.spend+=x.spend;s.paid+=x.paid;s.org+=x.org; } return s; }
     function monLbl(ym){ return MON[parseInt(ym.slice(5,7),10)-1]; }
     var sub="Month-to-date, days 1–"+N+": "+monLbl(curYM)+" vs "+monLbl(prevYM)+" (same elapsed days)";
-    function row2(nm,val,cur,prev,growth){ var r=relD(cur,prev); var rc=growth?(r==null?"neutral":(r>=0?"good":"bad")):"neutral";
-      return '<div class="eh-m2"><div class="eh-name">'+nm+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span></div><span class="eh-chip eh-'+rc+'">'+deltaTxt(r)+'</span></div></div>'; }
-
+    function row2(nm,valTxt,cur,prev,mode){ var r=relD(cur,prev);
+      var rc = mode==="upGood"?(r==null?"neutral":(r>=0?"good":"bad")) : mode==="downGood"?(r==null?"neutral":(r<=0?"good":"bad")) : "neutral";
+      return '<div class="eh-m2"><div class="eh-name">'+nm+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+valTxt+'</span></div><span class="eh-chip eh-'+rc+'">'+deltaTxt(r)+'</span></div></div>'; }
     var html='<div class="eh-games">'+apps.map(function(app){
       var c=agg(app,curYM), p=agg(app,prevYM);
+      var cpiPc=c.paid>0?c.spend/c.paid:null, cpiPp=p.paid>0?p.spend/p.paid:null;
+      var cpiBc=(c.paid+c.org)>0?c.spend/(c.paid+c.org):null, cpiBp=(p.paid+p.org)>0?p.spend/(p.paid+p.org):null;
       return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">Month to date</span></div>'
         +'<div class="eh-fresh">'+sub+'</div>'
         +'<div class="eh-grp">Spend</div>'
-        +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,false)
+        +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,"neutral")
+        +'<div class="eh-grp">Cost per install</div>'
+        +row2("CPI paid",cpiF(cpiPc),cpiPc,cpiPp,"downGood")
+        +row2("CPI blended",cpiF(cpiBc),cpiBc,cpiBp,"downGood")
         +'<div class="eh-grp">Installs</div>'
-        +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),true)
-        +row2("Paid installs",intF(c.paid),c.paid,p.paid,true)
-        +row2("Organic installs",intF(c.org),c.org,p.org,true)
+        +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),"upGood")
+        +row2("Paid installs",intF(c.paid),c.paid,p.paid,"upGood")
+        +row2("Organic installs",intF(c.org),c.org,p.org,"upGood")
         +'</section>';
     }).join("")+'</div>';
     root.innerHTML=html;
@@ -270,8 +285,9 @@
       try{
         var R=resolver(queryResponse), thr=buildThr(config);
         if(!data || !data.length){ this._root.innerHTML='<div class="eh-empty">No data returned by the query.</div>'; return done(); }
-        if(R("is_paid") && R("dt_event_date")){ renderMonthly(this._root, data, R); }
-        else if(R("count_crash")){ renderTech(this._root, data, R, thr); }
+        if(R("count_crash")){ renderTech(this._root, data, R, thr); }
+        else if(R("total_d1_cnt")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform")); }
+        else if(R("is_paid")){ renderMonthly(this._root, data, R); }
         else if(R("dt_event_date")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform")); }
         else { this._root.innerHTML='<div class="eh-empty">Unrecognized query. Provide a daily main_kpi query (KPI) or a daily Crashlytics query (technical).</div>'; }
       }catch(e){ this._root.innerHTML='<div class="eh-empty">Error: '+(e&&e.message?e.message:e)+'</div>'; }
