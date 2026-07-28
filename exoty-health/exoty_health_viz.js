@@ -12,7 +12,7 @@
  * Headline value = most recent MATURE trailing 7-day window; delta = vs the previous 7 days.
  * Sparkline = last 14 days (daily steps of the 7-day rolling metric), with hover tooltips.
  * CPI paid = spend ÷ paid installs ; CPI blended = spend ÷ all installs.
- * RAG thresholds are editable from the tile's visualization settings (section "Thresholds").
+ * CPI paid shows its paid-install count and is flagged "low volume" (neutral) below a threshold.
  * Games are always ordered alphabetically (Belote before Tarot). Fields matched by suffix.
  */
 (function () {
@@ -116,7 +116,7 @@
 
   function noteKPI(){ return '<div class="eh-note"><div class="t">How to read — windows &amp; maturity</div>'
     +'Each metric is the most recent <b>mature trailing 7-day window</b>, compared to the <b>previous 7 days</b> (rolling — works any day). Sparkline = last <b>14 days</b>.<br>'
-    +'<b>CPI paid</b> = spend ÷ paid installs (real acquisition cost). <b>CPI blended</b> = spend ÷ all installs (diluted by free organic installs).<br>'
+    +'<b>CPI paid</b> = spend ÷ paid installs (real acquisition cost); it shows the paid-install count and is greyed as <b>"low volume"</b> when too few paid installs to be reliable. <b>CPI blended</b> = spend ÷ all installs (diluted by free organic installs).<br>'
     +'<b>Maturity:</b> retention counts a cohort only once matured — D1 uses installs up to 2 days ago, D3 up to 4 days, D7 up to 8 days.<br>'
     +'Ad spend, CPI, ARPU, ARPPU are rebuilt from daily building blocks and match Looker\'s native measures.</div>'; }
   function noteTech(){ return '<div class="eh-note"><div class="t">How to read</div>'
@@ -124,7 +124,7 @@
     +'A true crash-free rate needs Android Vitals + App Store Connect ingestion.</div>'; }
 
   /* ---- KPI cards (by game, or by game x platform) — CPI paid + blended ---- */
-  function renderKPICards(root, rows, R, thr, byPlatform){
+  function renderKPICards(root, rows, R, thr, byPlatform, minPaid){
     var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPlat=R("cd_install_platform"), fPaid=R("is_paid"),
         fInst=R("new_installs"), fCost=R("total_attribution_cost"), fRev=R("total_revenue"),
         fDau=R("count_player"), fIap=R("iap_revenue"), fPay=R("paying_player"),
@@ -174,11 +174,15 @@
       var rl=function(n){return relD(m[n].cur,m[n].prev);};
       var spendRag=(rl("spend")!=null&&Math.abs(rl("spend"))>=thr.spendSwing)?"warn":"neutral";
       var rg2=function(n,s){return rag(rl(n),s);};
+      var paidN=sumF(k,winEnding(T,1,0),"iPaid");
+      var lowVol=(hasPaid && minPaid>0 && paidN<minPaid);
+      var cpiPrc=lowVol?"neutral":rg2("cpiP",thr.cpi);
+      var cpiPsub="spend ÷ "+intF(paidN)+" paid installs · 7d"+(lowVol?" · low volume":"");
       return '<section class="eh-card"><div class="eh-head"><h2>'+esc(k)+'</h2><span class="eh-inst">'+intF(inst)+' installs · 7d</span></div>'
         +'<div class="eh-fresh">Data through '+(fr?dShort(fr):"—")+'</div>'
         +'<div class="eh-grp">Acquisition</div>'
         +mrow("Ad spend","7d rolling ("+winL("spend")+")",money(m.spend.cur),m.spend,spendRag,money)
-        +mrow("CPI paid","spend ÷ paid installs · 7d",cpiF(m.cpiP.cur),m.cpiP,rg2("cpiP",thr.cpi),cpiF)
+        +mrow("CPI paid",cpiPsub,cpiF(m.cpiP.cur),m.cpiP,cpiPrc,cpiF)
         +mrow("CPI blended","spend ÷ all installs · 7d",cpiF(m.cpiB.cur),m.cpiB,rg2("cpiB",thr.cpi),cpiF)
         +'<div class="eh-grp">Monetization</div>'
         +mrow("ARPU (IAP+Ad)","7d rolling",arpuF(m.arpu.cur),m.arpu,rg2("arpu",thr.arpu),arpuF)
@@ -223,7 +227,7 @@
   }
 
   /* ---- Monthly summary : MTD spend, CPI (paid/blended), installs (total/paid/organic) vs prev month ---- */
-  function renderMonthly(root, rows, R){
+  function renderMonthly(root, rows, R, minPaid){
     var fDate=R("dt_event_date"), fApp=R("st_app_name"), fPaid=R("is_paid"), fInst=R("new_installs"), fCost=R("total_attribution_cost");
     var MON=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     var by={}, apps=[];
@@ -247,12 +251,13 @@
       var c=agg(app,curYM), p=agg(app,prevYM);
       var cpiPc=c.paid>0?c.spend/c.paid:null, cpiPp=p.paid>0?p.spend/p.paid:null;
       var cpiBc=(c.paid+c.org)>0?c.spend/(c.paid+c.org):null, cpiBp=(p.paid+p.org)>0?p.spend/(p.paid+p.org):null;
+      var mLow=(minPaid>0 && c.paid<minPaid);
       return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">Month to date</span></div>'
         +'<div class="eh-fresh">'+sub+'</div>'
         +'<div class="eh-grp">Spend</div>'
         +row2("Global spend (MTD)",money(c.spend),c.spend,p.spend,"neutral")
         +'<div class="eh-grp">Cost per install</div>'
-        +row2("CPI paid",cpiF(cpiPc),cpiPc,cpiPp,"downGood")
+        +row2("CPI paid"+(mLow?" · low volume":""),cpiF(cpiPc),cpiPc,cpiPp,mLow?"neutral":"downGood")
         +row2("CPI blended",cpiF(cpiBc),cpiBc,cpiBp,"downGood")
         +'<div class="eh-grp">Installs</div>'
         +row2("Total installs",intF(c.paid+c.org),(c.paid+c.org),(p.paid+p.org),"upGood")
@@ -275,7 +280,8 @@
       ret_warn:{type:"number", label:"Retention warn (−% WoW)", default:5, section:"Thresholds", order:6},
       ret_bad:{type:"number", label:"Retention alert (−% WoW)", default:10, section:"Thresholds", order:7},
       crash_warn:{type:"number", label:"Crashes/ANR warn (+% WoW)", default:15, section:"Thresholds", order:8},
-      crash_bad:{type:"number", label:"Crashes/ANR alert (+% WoW)", default:30, section:"Thresholds", order:9}
+      crash_bad:{type:"number", label:"Crashes/ANR alert (+% WoW)", default:30, section:"Thresholds", order:9},
+      min_paid_installs:{type:"number", label:"CPI paid — low-volume guard (min paid installs)", default:30, section:"Thresholds", order:10}
     },
     create: function (element) {
       var s=document.createElement("style"); s.innerHTML=CSS; element.appendChild(s);
@@ -283,12 +289,12 @@
     },
     updateAsync: function (data, element, config, queryResponse, details, done) {
       try{
-        var R=resolver(queryResponse), thr=buildThr(config);
+        var R=resolver(queryResponse), thr=buildThr(config), minPaid=num(config&&config.min_paid_installs,30);
         if(!data || !data.length){ this._root.innerHTML='<div class="eh-empty">No data returned by the query.</div>'; return done(); }
         if(R("count_crash")){ renderTech(this._root, data, R, thr); }
-        else if(R("total_d1_cnt")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform")); }
-        else if(R("is_paid")){ renderMonthly(this._root, data, R); }
-        else if(R("dt_event_date")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform")); }
+        else if(R("total_d1_cnt")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform"), minPaid); }
+        else if(R("is_paid")){ renderMonthly(this._root, data, R, minPaid); }
+        else if(R("dt_event_date")){ renderKPICards(this._root, data, R, thr, !!R("cd_install_platform"), minPaid); }
         else { this._root.innerHTML='<div class="eh-empty">Unrecognized query. Provide a daily main_kpi query (KPI) or a daily Crashlytics query (technical).</div>'; }
       }catch(e){ this._root.innerHTML='<div class="eh-empty">Error: '+(e&&e.message?e.message:e)+'</div>'; }
       done();
