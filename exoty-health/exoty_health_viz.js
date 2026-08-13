@@ -47,7 +47,7 @@
   .eh-empty{color:#6b7280;padding:24px;text-align:center}
   `;
 
-  var CUR = "€", SPARK_DAYS = 14, SPARKW = 140;
+  var CUR = "€", SPARK_DAYS = 14, SPARKW = 140, WINDOW = 14;
 
   function todayUTC(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())); }
   function iso(d){ return d.toISOString().slice(0,10); }
@@ -104,23 +104,23 @@
     crashVol:{hb:true,warn:num(config.crash_warn,15)/100, bad:num(config.crash_bad,30)/100}
   }; }
 
-  function winEnding(T, endOff, daysBack){ var end=addDays(T,-(endOff+daysBack)); var start=addDays(end,-6); return [iso(start),iso(end)]; }
+  function winEnding(T, endOff, daysBack){ var end=addDays(T,-(endOff+daysBack)); var start=addDays(end,-(WINDOW-1)); return [iso(start),iso(end)]; }
   var END={spend:1,cpi:1,cpiP:1,cpiB:1,arpu:1,arppu:1,d1:2,d3:4,d7:8,crAnd:1,anrAnd:1,crIos:1};
   function eachDay(rg,cb){ var d=rg[0],end=rg[1]; while(d<=end){ cb(d); d=iso(addDays(new Date(d+"T00:00:00Z"),1)); } }
   function buildMetric(T, mvFn){ return function(key,name){
     var e=END[name];
-    var cur=mvFn(key,name, winEnding(T,e,0)), prev=mvFn(key,name, winEnding(T,e,7));
+    var cur=mvFn(key,name, winEnding(T,e,0)), prev=mvFn(key,name, winEnding(T,e,WINDOW));
     var s=[], dates=[]; for(var k=SPARK_DAYS-1;k>=0;k--){ var rg=winEnding(T,e,k); s.push(mvFn(key,name,rg)); dates.push(rg[1]); }
     return {cur:cur, prev:prev, s:s, dates:dates};
   }; }
 
   function noteKPI(){ return '<div class="eh-note"><div class="t">How to read — windows &amp; maturity</div>'
-    +'Each metric is the most recent <b>mature trailing 7-day window</b>, compared to the <b>previous 7 days</b> (rolling — works any day). Sparkline = last <b>14 days</b>.<br>'
+    +'Acquisition &amp; monetization = most recent <b>14-day rolling window</b>, compared to the <b>previous 14 days</b>. Sparkline = last 14 days.<br>'
     +'<b>CPI paid</b> = spend ÷ paid installs (real acquisition cost); it shows the paid-install count and is greyed as <b>"low volume"</b> when too few paid installs to be reliable. <b>CPI blended</b> = spend ÷ all installs (diluted by free organic installs).<br>'
     +'<b>Retention:</b> D1/D3/D7 share the same cohort start (J‑14) and each includes all mature cohorts up to its maturity boundary (D1→J‑2, D3→J‑4, D7→J‑8), so the funnel reads on the same spectrum. Retention sparkline = retention per install-day over the last 14 mature cohort-days.<br>'
     +'Ad spend, CPI, ARPU, ARPPU are rebuilt from daily building blocks and match Looker\'s native measures.</div>'; }
   function noteTech(){ return '<div class="eh-note"><div class="t">How to read</div>'
-    +'Exact crash/ANR <b>volumes</b> over the most recent 7-day window vs the previous 7 days (Firebase Crashlytics). Sparkline = last 14 days. '
+    +'Exact crash/ANR <b>volumes</b> over the most recent <b>14-day window</b> vs the previous 14 days (Firebase Crashlytics). Sparkline = last 14 days. '
     +'A true crash-free rate needs Android Vitals + App Store Connect ingestion.</div>'; }
 
   /* ---- KPI cards (by game, or by game x platform) — CPI paid + blended ---- */
@@ -189,16 +189,16 @@
       var paidN=sumF(k,winEnding(T,1,0),"iPaid");
       var lowVol=(hasPaid && minPaid>0 && paidN<minPaid);
       var cpiPrc=lowVol?"neutral":rg2("cpiP",thr.cpi);
-      var cpiPsub="spend ÷ "+intF(paidN)+" paid installs · 7d"+(lowVol?" · low volume":"");
-      return '<section class="eh-card"><div class="eh-head"><h2>'+esc(k)+'</h2><span class="eh-inst">'+intF(inst)+' installs · 7d</span></div>'
+      var cpiPsub="spend ÷ "+intF(paidN)+" paid installs · 14d"+(lowVol?" · low volume":"");
+      return '<section class="eh-card"><div class="eh-head"><h2>'+esc(k)+'</h2><span class="eh-inst">'+intF(inst)+' installs · 14d</span></div>'
         +'<div class="eh-fresh">Data through '+(fr?dShort(fr):"—")+'</div>'
         +'<div class="eh-grp">Acquisition</div>'
-        +mrow("Ad spend","7d rolling ("+winL("spend")+")",money(m.spend.cur),m.spend,spendRag,money)
+        +mrow("Ad spend","14d rolling ("+winL("spend")+")",money(m.spend.cur),m.spend,spendRag,money)
         +mrow("CPI paid",cpiPsub,cpiF(m.cpiP.cur),m.cpiP,cpiPrc,cpiF)
-        +mrow("CPI blended","spend ÷ all installs · 7d",cpiF(m.cpiB.cur),m.cpiB,rg2("cpiB",thr.cpi),cpiF)
+        +mrow("CPI blended","spend ÷ all installs · 14d",cpiF(m.cpiB.cur),m.cpiB,rg2("cpiB",thr.cpi),cpiF)
         +'<div class="eh-grp">Monetization</div>'
-        +mrow("ARPU (IAP+Ad)","7d rolling",arpuF(m.arpu.cur),m.arpu,rg2("arpu",thr.arpu),arpuF)
-        +mrow("ARPPU (IAP)","7d rolling",arppuF(m.arppu.cur),m.arppu,rg2("arppu",thr.arppu),arppuF)
+        +mrow("ARPU (IAP+Ad)","14d rolling",arpuF(m.arpu.cur),m.arpu,rg2("arpu",thr.arpu),arpuF)
+        +mrow("ARPPU (IAP)","14d rolling",arppuF(m.arppu.cur),m.arppu,rg2("arppu",thr.arppu),arppuF)
         +'<div class="eh-grp">Retention (mature cohorts — same start)</div>'
         +mrow("Retention D1",rlbl(rD1),pctF(rD1.cur),rD1,rrag(rD1),pctF)
         +mrow("Retention D3",rlbl(rD3),pctF(rD3.cur),rD3,rrag(rD3),pctF)
@@ -227,12 +227,12 @@
       +'<span class="eh-chip eh-'+rc+'">'+deltaTxt(relD(c.cur,c.prev))+'</span></div></div>'; }
     var html='<div class="eh-games">'+apps.map(function(app){
       var cra=M(app,"crAnd"), anr=M(app,"anrAnd"), cio=M(app,"crIos"); var fr=freshness(app);
-      return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">volumes · 7d</span></div>'
+      return '<section class="eh-card"><div class="eh-head"><h2>'+esc(app)+'</h2><span class="eh-inst">volumes · 14d</span></div>'
         +'<div class="eh-fresh">Data through '+(fr?dShort(fr):"—")+'</div>'
         +'<div class="eh-grp">Technical stability (7d volumes)</div>'
-        +mrow("Android crashes","FATAL · 7d rolling",intF(cra.cur),cra,rgV(cra))
-        +mrow("Android ANR","7d rolling",intF(anr.cur),anr,rgV(anr))
-        +mrow("iOS crashes","FATAL · 7d rolling",intF(cio.cur),cio,rgV(cio))
+        +mrow("Android crashes","FATAL · 14d rolling",intF(cra.cur),cra,rgV(cra))
+        +mrow("Android ANR","14d rolling",intF(anr.cur),anr,rgV(anr))
+        +mrow("iOS crashes","FATAL · 14d rolling",intF(cio.cur),cio,rgV(cio))
         +'</section>';
     }).join("")+'</div>'+noteTech();
     root.innerHTML=html;
