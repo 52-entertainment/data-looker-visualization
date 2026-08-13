@@ -18,7 +18,7 @@
 (function () {
   var CSS = `
   .eh-wrap{--ink:#141a1f;--mut:#6b7280;--faint:#9aa1a9;--line:#e9ebef;--card:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:var(--ink);font-size:13px;padding:6px}
-  .eh-games{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .eh-games{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:16px}
   .eh-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 16px 10px;box-shadow:0 1px 3px rgba(16,24,40,.04)}
   .eh-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
   .eh-head h2{font-size:15.5px;margin:0;font-weight:680}
@@ -26,7 +26,7 @@
   .eh-fresh{color:var(--faint);font-size:11px;margin:1px 0 2px}
   .eh-grp{font-size:10.5px;font-weight:750;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:14px 0 4px;padding-top:11px;border-top:1px solid #f1f2f5}
   .eh-grp:first-of-type{border-top:none;padding-top:2px}
-  .eh-m{display:grid;grid-template-columns:1fr 92px auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f6f7f9}
+  .eh-m{display:grid;grid-template-columns:1fr 150px auto;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #f6f7f9}
   .eh-m:last-child{border-bottom:none}
   .eh-name{font-weight:570;font-size:13.5px}
   .eh-win{color:var(--faint);font-size:10.5px;margin-top:1px}
@@ -47,7 +47,7 @@
   .eh-empty{color:#6b7280;padding:24px;text-align:center}
   `;
 
-  var CUR = "€", SPARK_DAYS = 14;
+  var CUR = "€", SPARK_DAYS = 14, SPARKW = 140;
 
   function todayUTC(){ var d=new Date(); return new Date(Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate())); }
   function iso(d){ return d.toISOString().slice(0,10); }
@@ -69,7 +69,7 @@
     opts=opts||{}; var w=opts.w||92, dates=opts.dates||[], fmt=opts.fmt||function(v){return v;};
     var pts=vals.filter(function(v){return v!=null && !isNaN(v);});
     if(pts.length<2) return '<svg width="'+w+'" height="28"></svg>';
-    var h=28,pad=4, mn=Math.min.apply(null,pts), mx=Math.max.apply(null,pts);
+    var h=34,pad=4, mn=Math.min.apply(null,pts), mx=Math.max.apply(null,pts);
     if(mn===mx){mn=mn-1;mx=mx+1;}
     var col=ragCls==="bad"?"#dc2626":ragCls==="warn"?"#e0871b":ragCls==="good"?"#16a34a":"#8b93a1";
     var n=vals.length, xs=[], ys=[];
@@ -117,7 +117,7 @@
   function noteKPI(){ return '<div class="eh-note"><div class="t">How to read — windows &amp; maturity</div>'
     +'Each metric is the most recent <b>mature trailing 7-day window</b>, compared to the <b>previous 7 days</b> (rolling — works any day). Sparkline = last <b>14 days</b>.<br>'
     +'<b>CPI paid</b> = spend ÷ paid installs (real acquisition cost); it shows the paid-install count and is greyed as <b>"low volume"</b> when too few paid installs to be reliable. <b>CPI blended</b> = spend ÷ all installs (diluted by free organic installs).<br>'
-    +'<b>Maturity:</b> retention counts a cohort only once matured — D1 uses installs up to 2 days ago, D3 up to 4 days, D7 up to 8 days.<br>'
+    +'<b>Retention:</b> D1/D3/D7 share the same cohort start (J‑14) and each includes all mature cohorts up to its maturity boundary (D1→J‑2, D3→J‑4, D7→J‑8), so the funnel reads on the same spectrum. Retention sparkline = retention per install-day over the last 14 mature cohort-days.<br>'
     +'Ad spend, CPI, ARPU, ARPPU are rebuilt from daily building blocks and match Looker\'s native measures.</div>'; }
   function noteTech(){ return '<div class="eh-note"><div class="t">How to read</div>'
     +'Exact crash/ANR <b>volumes</b> over the most recent 7-day window vs the previous 7 days (Firebase Crashlytics). Sparkline = last 14 days. '
@@ -166,10 +166,22 @@
     var M=buildMetric(T,mv);
     function winL(name){ var r=winEnding(T,END[name],0); return dShort(r[0])+"→"+dShort(r[1]); }
     function mrow(nm,sub,val,c,rc,fmt){ return '<div class="eh-m"><div><div class="eh-name">'+nm+'</div><div class="eh-win">'+sub+'</div></div>'
-      +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:fmt})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
+      +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:fmt,w:SPARKW})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
       +'<span class="eh-chip eh-'+rc+'">'+deltaTxt(relD(c.cur,c.prev))+'</span></div></div>'; }
+    function retR(k,s,e,col){ var i=0,ret=0,d=s; while(d<=e){ var A=by[k].acc[d]; if(A){i+=A.iAll;ret+=A[col];} d=iso(addDays(new Date(d+"T00:00:00Z"),1)); } return i>0?ret/i:null; }
+    var RETEND={d1:2,d3:4,d7:8};   // maturity boundary per horizon (window END = T-RETEND); START = T-14 for all
+    function retCard(k,h){
+      var start=iso(addDays(T,-14)), end=iso(addDays(T,-RETEND[h]));
+      var cur=retR(k,start,end,h), prev=retR(k,iso(addDays(T,-21)),iso(addDays(T,-(RETEND[h]+7))),h);
+      var ss=[],dd=[],e=addDays(T,-RETEND[h]);
+      for(var q=13;q>=0;q--){ var d=iso(addDays(e,-q)); var A=by[k].acc[d]; ss.push(A&&A.iAll>0?A[h]/A.iAll:null); dd.push(d); }
+      return {cur:cur,prev:prev,s:ss,dates:dd,start:start,end:end};
+    }
     var html='<div class="eh-games">'+keys.map(function(k){
-      var m={}; ["spend","cpiP","cpiB","arpu","arppu","d1","d3","d7"].forEach(function(n){m[n]=M(k,n);});
+      var m={}; ["spend","cpiP","cpiB","arpu","arppu"].forEach(function(n){m[n]=M(k,n);});
+      var rD1=retCard(k,"d1"), rD3=retCard(k,"d3"), rD7=retCard(k,"d7");
+      var rlbl=function(c){return "cohort "+dShort(c.start)+"→"+dShort(c.end);};
+      var rrag=function(c){return rag(relD(c.cur,c.prev),thr.ret);};
       var inst=sumF(k,winEnding(T,1,0),"iAll"), fr=freshness(k);
       var rl=function(n){return relD(m[n].cur,m[n].prev);};
       var spendRag=(rl("spend")!=null&&Math.abs(rl("spend"))>=thr.spendSwing)?"warn":"neutral";
@@ -187,10 +199,10 @@
         +'<div class="eh-grp">Monetization</div>'
         +mrow("ARPU (IAP+Ad)","7d rolling",arpuF(m.arpu.cur),m.arpu,rg2("arpu",thr.arpu),arpuF)
         +mrow("ARPPU (IAP)","7d rolling",arppuF(m.arppu.cur),m.arppu,rg2("arppu",thr.arppu),arppuF)
-        +'<div class="eh-grp">Retention (mature cohorts)</div>'
-        +mrow("Retention D1","cohort "+winL("d1"),pctF(m.d1.cur),m.d1,rg2("d1",thr.ret),pctF)
-        +mrow("Retention D3","cohort "+winL("d3"),pctF(m.d3.cur),m.d3,rg2("d3",thr.ret),pctF)
-        +mrow("Retention D7","cohort "+winL("d7"),pctF(m.d7.cur),m.d7,rg2("d7",thr.ret),pctF)
+        +'<div class="eh-grp">Retention (mature cohorts — same start)</div>'
+        +mrow("Retention D1",rlbl(rD1),pctF(rD1.cur),rD1,rrag(rD1),pctF)
+        +mrow("Retention D3",rlbl(rD3),pctF(rD3.cur),rD3,rrag(rD3),pctF)
+        +mrow("Retention D7",rlbl(rD7),pctF(rD7.cur),rD7,rrag(rD7),pctF)
         +'</section>';
     }).join("")+'</div>'+noteKPI();
     root.innerHTML=html;
@@ -211,7 +223,7 @@
     var M=buildMetric(T,mv);
     function rgV(c){ return rag(relD(c.cur,c.prev),thr.crashVol); }
     function mrow(nm,sub,val,c,rc){ return '<div class="eh-m"><div><div class="eh-name">'+nm+'</div><div class="eh-win">'+sub+'</div></div>'
-      +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:intF})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
+      +'<div>'+spark(c.s,rc,{dates:c.dates,fmt:intF,w:SPARKW})+'</div><div class="eh-rt"><div class="eh-valrow"><span class="eh-val">'+val+'</span><span class="eh-status eh-'+rc+'"></span></div>'
       +'<span class="eh-chip eh-'+rc+'">'+deltaTxt(relD(c.cur,c.prev))+'</span></div></div>'; }
     var html='<div class="eh-games">'+apps.map(function(app){
       var cra=M(app,"crAnd"), anr=M(app,"anrAnd"), cio=M(app,"crIos"); var fr=freshness(app);
